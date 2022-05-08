@@ -1,0 +1,69 @@
+---
+dataset:
+  type: Datasets.NetflixDataset
+  directory: {{ dataset_directory }}
+  max_steps:
+    train: {{ 100 if core.debug else 47_916_786 }}
+    valid: {{ 100 if core.debug else 1_601_622 }}
+    test: {{ 100 if core.debug else 1_026_579 }}
+dataloaders:
+  train:
+    type: torch.utils.data.DataLoader
+    _mode_: partial
+    batch_size: {{ batch_size | int }}
+    num_workers: 1
+    collate_fn:
+      type: Datasets.NetflixDatasetCollator
+  valid:
+    type: torch.utils.data.DataLoader
+    _mode_: partial
+    batch_size: {{ batch_size | int }}
+    num_workers: 1
+    collate_fn:
+      type: Datasets.NetflixDatasetCollator
+  test:
+    type: torch.utils.data.DataLoader
+    _mode_: partial
+    batch_size: {{ batch_size | int }}
+    num_workers: 1
+    collate_fn:
+      type: Datasets.NetflixDatasetCollator
+experiment:
+  type: Runners.SvdRunner
+  num_epochs: 10
+  stats_path: "{{ dataset_directory }}/stats.json"
+  model:
+    type: Models.PaterekSvd
+    _mode_: partial
+    embedders:
+      item_q:
+        type: haiku.Embed
+        _mode_: partial
+        name: item_q
+        embed_dim: {{ features_size | int }}
+        w_init: &embed_init
+          type: haiku.initializers.TruncatedNormal
+          stddev: 0.5
+      item_x:
+        type: haiku.Embed
+        _mode_: partial
+        name: item_x
+        embed_dim: {{ features_size | int }}
+        w_init: *embed_init
+  loss_fn:
+    type: Losses.mse_loss
+    _mode_: partial
+  optimizer:
+    type: optax.chain
+    _mode_: call
+    args:
+      - type: optax.add_decayed_weights
+        _mode_: call
+        weight_decay: {{ 1e-4 | float }}
+      - type: optax.clip
+        _mode_: call
+        max_delta: 1.0
+      - type: optax.adam
+        _mode_: call
+        learning_rate: {{ 3e-4 | float }}
+  seed: {{ core.seed | int }}

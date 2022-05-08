@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "svd_plus_plus"
+version = "0.1.0"
+description = "Implementation of 'Factorization Meets the Neighborhood: a Multifaceted Collaborative Filtering Model'"
+authors = ["nemexur <alex.milogradsky@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+numpy = "^1.22.3"
+jax = "^0.3.10"
+jaxlib = "^0.3.10"
+dm-haiku = "^0.0.6"
+optax = "^0.1.2"
+einops = "^0.4.1"
+alive-progress = "^2.4.1"
+Jinja2 = "^3.1.1"
+hydra-slayer = "^0.4.0"
+animus = "0.0.2"
+torch = "^1.11.0"
+torchdata = "^0.3.0"
+click = "^8.1.2"
+click-help-colors = "^0.9.1"
+PyYAML = "^6.0"
+rich = "^12.3.0"
+wandb = "^0.12.16"
+tfp-nightly = {extras = ["jax"], version = "^0.17.0-alpha.20220428"}
+
+[tool.poetry.dev-dependencies]
+catalyst-codestyle = "^21.9.2"
+ipython = "^8.2.0"
+jupyterlab = "^3.4.0"
+ipykernel = "^6.13.0"
+
+[tool.poetry.scripts]
+svd-pp = "svd_plus_plus.cli:get_cli"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
