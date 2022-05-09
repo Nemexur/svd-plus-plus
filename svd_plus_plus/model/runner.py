@@ -49,6 +49,9 @@ class SvdRunner(IExperiment):
         self.callbacks = callbacks or {}
         self.seed = seed
         self.num_epochs = num_epochs
+        # Extra variables
+        self.batch_output: BatchOutput = None
+        self.test_dataset: DataLoader = None
 
     def _forward_fn(self, batch: Batch) -> Tuple[Optional[jnp.ndarray], dict[str, jnp.ndarray]]:
         model = self._model(
