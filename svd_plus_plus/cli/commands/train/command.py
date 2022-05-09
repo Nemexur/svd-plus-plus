@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from animus import set_global_seed
 import click
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from loguru import logger
@@ -17,7 +18,7 @@ from svd_plus_plus.cli.options import (
 )
 from svd_plus_plus.cli.types import DictParamType
 from svd_plus_plus.core import State
-from svd_plus_plus.core.utils import make_flat, seed_everything
+from svd_plus_plus.core.utils import make_flat
 
 
 @cli_command(help="Train the model with specified config.")
@@ -45,7 +46,7 @@ def train(state: State, config_path: Path, extra_vars: dict[str, str]) -> None:
     logger.info("Run with config:")
     print_json(data=config)
     # Preparation for experiment
-    seed_everything(state.core.seed)
+    set_global_seed(state.core.seed)
     state.wandb_state.init_with_config(make_flat(config))
     # Ok. Let's go.
     do_train(config)
