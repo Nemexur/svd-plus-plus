@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from svd_plus_plus.model.typing import Batch
 
 
-class PaterekSvd(hk.Module):
+class SvdModel(hk.Module):
     def __init__(
         self, embedders: dict[str, hk.Embed], stats: dict[str, Any], name: Optional[str] = None
     ) -> None:
@@ -17,6 +17,8 @@ class PaterekSvd(hk.Module):
             (self._stats["max_rating"] - self._stats["min_rating"]) / 2
         )
 
+
+class PaterekSvd(SvdModel):
     def __call__(self, batch: Batch) -> dict[str, jnp.ndarray]:
         # user, item ~ (batch size)
         # similar_explicit, similar_implicit, similar_explicit_ratings ~ (batch size, padding size)
@@ -53,17 +55,7 @@ class PaterekSvd(hk.Module):
         }
 
 
-class AsymmetricSvd(hk.Module):
-    def __init__(
-        self, embedders: dict[str, hk.Embed], stats: dict[str, Any], name: Optional[str] = None
-    ) -> None:
-        super().__init__(name=name)
-        self._embedders = embedders
-        self._stats = stats
-        self._bias_init = hk.initializers.Constant(
-            (self._stats["max_rating"] - self._stats["min_rating"]) / 2
-        )
-
+class AsymmetricSvd(SvdModel):
     def __call__(self, batch: Batch) -> dict[str, jnp.ndarray]:
         # user, item ~ (batch size)
         # similar_explicit, similar_implicit, similar_explicit_ratings ~ (batch size, padding size)
@@ -126,17 +118,7 @@ class AsymmetricSvd(hk.Module):
         }
 
 
-class SvdPlusPlus(hk.Module):
-    def __init__(
-        self, embedders: dict[str, hk.Embed], stats: dict[str, Any], name: Optional[str] = None
-    ) -> None:
-        super().__init__(name=name)
-        self._embedders = embedders
-        self._stats = stats
-        self._bias_init = hk.initializers.Constant(
-            (self._stats["max_rating"] - self._stats["min_rating"]) / 2
-        )
-
+class SvdPlusPlus(SvdModel):
     def __call__(self, batch: Batch) -> dict[str, jnp.ndarray]:
         # user, item ~ (batch size)
         # similar_explicit, similar_implicit, similar_explicit_ratings ~ (batch size, padding size)

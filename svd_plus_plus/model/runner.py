@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from svd_plus_plus.datasets.datapipe import get_stats
+from svd_plus_plus.model import SvdModel
 from svd_plus_plus.model.metrics import Loss, RMSEMetric
 from svd_plus_plus.model.typing import Batch
 import wandb
@@ -27,7 +28,7 @@ class BatchOutput(NamedTuple):
 class SvdRunner(IExperiment):
     def __init__(
         self,
-        model: hk.Module,
+        model: SvdModel,
         loss_fn: Callable,
         optimizer: optax.GradientTransformation,
         num_epochs: int,
