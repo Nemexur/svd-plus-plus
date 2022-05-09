@@ -31,6 +31,7 @@ dataloaders:
 experiment:
   type: Runners.SvdRunner
   num_epochs: 10
+  seed: {{ core.seed | int }}
   stats_path: "{{ dataset_directory }}/stats.json"
   model:
     type: Models.PaterekSvd
@@ -66,4 +67,19 @@ experiment:
       - type: optax.adam
         _mode_: call
         learning_rate: {{ 3e-4 | float }}
-  seed: {{ core.seed | int }}
+  callbacks:
+    early-stop:
+      type: animus.EarlyStoppingCallback
+      minimize: true
+      patience: 10
+      dataset_key: valid
+      metric_key: rmse
+      min_delta: 0.001
+    checkpointer:
+      type: animus.PickleCheckpointerCallback
+      exp_attr: state
+      logdir: "{{ dir_state.directory }}/states"
+      topk: 3
+      minimize: true
+      dataset_key: valid
+      metric_key: rmse
