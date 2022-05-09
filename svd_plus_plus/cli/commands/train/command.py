@@ -39,7 +39,7 @@ from svd_plus_plus.core.utils import make_flat
 def train(state: State, config_path: Path, extra_vars: dict[str, str]) -> None:
     state.dir_state.confirm_directory_creation_if_needed()
     # Create config from template
-    jinja_env = Environment(loader=FileSystemLoader("."), undefined=StrictUndefined)
+    jinja_env = Environment(loader=FileSystemLoader([".", "/"]), undefined=StrictUndefined)
     config = yaml.safe_load(
         jinja_env.get_template(str(config_path)).render(**extra_vars, **state.as_dict())
     )

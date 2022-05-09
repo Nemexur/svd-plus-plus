@@ -77,14 +77,12 @@ class SvdRunner(IExperiment):
 
     def on_experiment_start(self, exp: "IExperiment") -> None:
         super().on_experiment_start(exp)
-        rng_key, batch = next(self.rng_seq), next(iter(self.datasets["train"]))
-        self.state = self.init_state(rng_key, batch)
+        self.state = self.init_state(next(self.rng_seq), next(iter(self.datasets["train"])))
 
     def on_experiment_end(self, exp: "IExperiment") -> None:
         super().on_experiment_end(exp)
         if self.test_dataset is not None:
             self.dataset_key, self.dataset = "test", self.test_dataset
-            self.is_train_dataset = False
             self._run_event("on_dataset_start")
             self.run_dataset()
             self._run_event("on_dataset_end")
