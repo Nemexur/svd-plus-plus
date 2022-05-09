@@ -2,7 +2,6 @@ from typing import Any, Callable, NamedTuple, Optional, Tuple
 from functools import partial
 from pathlib import Path
 
-from alive_progress import alive_bar
 from animus import ICallback, IExperiment
 import haiku as hk
 import jax
@@ -11,19 +10,16 @@ from loguru import logger
 import optax
 from rich.console import Console
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from svd_plus_plus.datasets.datapipe import get_stats
 from svd_plus_plus.model.metrics import Loss, RMSEMetric
 from svd_plus_plus.model.typing import Batch
-
-
-class SvdOutput(NamedTuple):
-    scores: jnp.ndarray
-    items: jnp.ndarray
+import wandb
 
 
 class BatchOutput(NamedTuple):
-    loss: jnp.ndarray
+    loss: Optional[jnp.ndarray]
     output: dict[str, jnp.ndarray]
     state: Optional[hk.State] = None
 
@@ -34,8 +30,8 @@ class SvdRunner(IExperiment):
         model: hk.Module,
         loss_fn: Callable,
         optimizer: optax.GradientTransformation,
-        stats_path: str,
         num_epochs: int,
+        stats_path: str,
         seed: int = 13,
         callbacks: dict[str, ICallback] = None,
     ) -> None:
@@ -43,12 +39,12 @@ class SvdRunner(IExperiment):
         self.state: hk.State = None
         self.rng_seq = hk.PRNGSequence(seed)
         self.forward = hk.transform(self._forward_fn)
-        self._console = Console()
-        self._stats = get_stats(Path(stats_path))
         self._model = model
         self._loss_fn = loss_fn
         self._optimizer = optimizer
         self._metrics = {"loss": Loss(), "rmse": RMSEMetric()}
+        self._console = Console()
+        self._stats = get_stats(Path(stats_path))
         # Set parameters for IExperiment
         self.callbacks = callbacks or {}
         self.seed = seed
@@ -86,7 +82,9 @@ class SvdRunner(IExperiment):
         if self.test_dataset is not None:
             self.dataset_key, self.dataset = "test", self.test_dataset
             self.is_train_dataset = False
+            self._run_event("on_dataset_start")
             self.run_dataset()
+            self._run_event("on_dataset_end")
 
     def on_dataset_start(self, exp: "IExperiment") -> None:
         super().on_dataset_start(exp)
@@ -103,9 +101,16 @@ class SvdRunner(IExperiment):
         # Sort by length to make it prettier
         for metric in sorted(self.dataset_metrics, key=lambda x: (len(x), x)):
             metric_value = self.dataset_metrics.get(metric)
-            # Log metrics that are numbers of some kind only
             if isinstance(metric_value, (float, int)):
                 logger.info(f"{metric.ljust(max_length)} | {metric_value:.4f}")
+        if wandb.run is not None:
+            wandb.log(
+                {"epoch": self.epoch_step}
+                | {
+                    f"{self.dataset_key}/{metric}": value
+                    for metric, value in self.dataset_metrics.items()
+                }
+            )
 
     def on_batch_end(self, exp: "IExperiment") -> None:
         super().on_batch_end(exp)
@@ -135,11 +140,6 @@ class SvdRunner(IExperiment):
     ) -> BatchOutput:
         return BatchOutput(*self.forward.apply(state["params"], rng_key, batch))
 
-    @partial(jax.jit, static_argnums=(0, 2))
-    def predict(self, batch: Batch, k: int = 10) -> SvdOutput:
-        output_dict = self.forward.apply(self.state["params"], jax.random.PRNGKey(self.seed), batch)
-        return SvdOutput(*jax.lax.top_k(output_dict["output"], k=k))
-
     def run_batch(self) -> None:
         self.batch_output = (
             self._train_batch(self.state, next(self.rng_seq), self.batch)
@@ -148,21 +148,24 @@ class SvdRunner(IExperiment):
         )
 
     def run_dataset(self) -> None:
-        with alive_bar(
-            title=f"Iterating {self.dataset_key.capitalize()}",
+        with tqdm(
+            desc=f"\033[00;33mIterating {self.dataset_key.capitalize()}\033[0m",
             total=len(self.dataset),
-            # Lower number of chars for progress bar.
-            length=20,
+            bar_format=(
+                "{desc} [{n_fmt}/{total_fmt}] "
+                "{percentage:3.0f}%|{bar}|{postfix} "
+                "({elapsed}<{remaining}, {rate_fmt})"
+            ),
         ) as pbar:
             for self.batch in self.dataset:
                 self._run_event("on_batch_start")
                 self.run_batch()
                 self._run_event("on_batch_end")
-                # Show in progress bar
-                pbar.text = (
+                # Update progress bar
+                pbar.set_postfix_str(
                     f"[ {', '.join(f'{k}: {v:.4f}' for k, v in self.batch_metrics.items())} ]"
                 )
-                pbar()
+                pbar.update()
         self.dataset_metrics = {
             key: metric.get_metric(reset=True) for key, metric in self._metrics.items()
         }
