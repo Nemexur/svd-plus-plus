@@ -18,8 +18,8 @@ def _models(registry: HydraSlayerRegistry) -> None:
 def _losses(registry: HydraSlayerRegistry) -> None:
     from svd_plus_plus.model.losses import mse_loss, warp_loss
 
-    registry.add(mse_loss, name="Losses.mse_loss")
-    registry.add(warp_loss, name="Losses.warp_loss")
+    registry.add(mse_loss, name="mse_loss")
+    registry.add(warp_loss, name="warp_loss")
 
 
 def _runners(registry: HydraSlayerRegistry) -> None:

@@ -51,7 +51,7 @@ experiment:
         embed_dim: {{ features_size | int }}
         w_init: *embed_init
   loss_fn:
-    type: Losses.mse_loss
+    type: mse_loss
     _mode_: partial
   optimizer:
     type: optax.chain

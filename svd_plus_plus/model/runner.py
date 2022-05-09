@@ -1,4 +1,4 @@
-from typing import Any, Callable, NamedTuple, Tuple
+from typing import Any, Callable, NamedTuple, Optional, Tuple
 from functools import partial
 from pathlib import Path
 
@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 from svd_plus_plus.datasets.datapipe import get_stats
 from svd_plus_plus.model.metrics import Loss, RMSEMetric
-from svd_plus_plus.model.typing import Batch, Params
+from svd_plus_plus.model.typing import Batch
 
 
 class SvdOutput(NamedTuple):
@@ -25,7 +25,7 @@ class SvdOutput(NamedTuple):
 class BatchOutput(NamedTuple):
     loss: jnp.ndarray
     output: dict[str, jnp.ndarray]
-    state: hk.State = None
+    state: Optional[hk.State] = None
 
 
 class SvdRunner(IExperiment):
@@ -42,7 +42,7 @@ class SvdRunner(IExperiment):
         super().__init__()
         self.state: hk.State = None
         self.rng_seq = hk.PRNGSequence(seed)
-        self.forward = hk.without_apply_rng(hk.transform(self._forward_fn))
+        self.forward = hk.transform(self._forward_fn)
         self._console = Console()
         self._stats = get_stats(Path(stats_path))
         self._model = model
@@ -54,17 +54,21 @@ class SvdRunner(IExperiment):
         self.seed = seed
         self.num_epochs = num_epochs
 
-    def _forward_fn(self, batch: Batch) -> dict[str, jnp.ndarray]:
+    def _forward_fn(self, batch: Batch) -> Tuple[Optional[jnp.ndarray], dict[str, jnp.ndarray]]:
         model = self._model(
             stats={
-                "num_users": self._stats["num_users"],
-                "num_items": self._stats["num_items"],
-                "avg_rating": self._stats["avg_rating"],
-                "max_rating": self._stats["max_rating"],
-                "min_rating": self._stats["min_rating"],
+                k: v
+                for k, v in self._stats.items()
+                if k in ("num_users", "num_items", "min_rating", "avg_rating", "max_rating")
             }
         )
-        return model(batch)
+        output_dict = model(batch)
+        if "target" not in batch:
+            return None, output_dict
+        target, batch_state = batch.get("target"), batch.get("state")
+        batch_state["rng_key"] = hk.next_rng_key()
+        loss = self._loss_fn(output_dict["output"], target, batch_state)
+        return loss, output_dict
 
     @partial(jax.jit, static_argnums=0)
     def init_state(self, rng_key: jax.random.PRNGKey, batch: Batch) -> dict[str, Any]:
@@ -94,6 +98,7 @@ class SvdRunner(IExperiment):
 
     def on_dataset_end(self, exp: "IExperiment") -> None:
         super().on_dataset_end(exp)
+        logger.info(f"{self.dataset_key.capitalize()} metrics:")
         max_length = max(len(x) for x in self.dataset_metrics)
         # Sort by length to make it prettier
         for metric in sorted(self.dataset_metrics, key=lambda x: (len(x), x)):
@@ -115,16 +120,10 @@ class SvdRunner(IExperiment):
     def _train_batch(
         self, state: hk.State, rng_key: jax.random.PRNGKey, batch: Batch
     ) -> BatchOutput:
-        @jax.jit
-        def loss_fn(params: Params) -> Tuple[jnp.ndarray, jnp.ndarray]:
-            target, batch_state = batch.get("target"), batch.get("state")
-            batch_state["rng_key"] = rng_key
-            output_dict = self.forward.apply(params, batch)
-            loss = self._loss_fn(output_dict["output"], target, batch_state)
-            return loss, output_dict
-
         params, opt_state = state["params"], state["opt_state"]
-        (loss, output), grads = jax.value_and_grad(loss_fn, has_aux=True)(params)
+        (loss, output), grads = jax.value_and_grad(self.forward.apply, has_aux=True)(
+            params, rng_key, batch
+        )
         updates, opt_state = self._optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         new_state = {"opt_state": opt_state, "params": params}
@@ -134,19 +133,11 @@ class SvdRunner(IExperiment):
     def _eval_batch(
         self, state: hk.State, rng_key: jax.random.PRNGKey, batch: Batch
     ) -> BatchOutput:
-        @jax.jit
-        def loss_fn(params: Params) -> Tuple[jnp.ndarray, jnp.ndarray]:
-            target, batch_state = batch.get("target"), batch.get("state")
-            batch_state["rng_key"] = rng_key
-            output_dict = self.forward.apply(params, batch)
-            loss = self._loss_fn(output_dict["output"], target, batch_state)
-            return loss, output_dict
-
-        return BatchOutput(*loss_fn(state["params"]))
+        return BatchOutput(*self.forward.apply(state["params"], rng_key, batch))
 
     @partial(jax.jit, static_argnums=(0, 2))
     def predict(self, batch: Batch, k: int = 10) -> SvdOutput:
-        output_dict = self.forward.apply(self.state["params"], batch)
+        output_dict = self.forward.apply(self.state["params"], jax.random.PRNGKey(self.seed), batch)
         return SvdOutput(*jax.lax.top_k(output_dict["output"], k=k))
 
     def run_batch(self) -> None:
@@ -158,17 +149,19 @@ class SvdRunner(IExperiment):
 
     def run_dataset(self) -> None:
         with alive_bar(
-            title=f"Iterating {self.dataset_key}",
+            title=f"Iterating {self.dataset_key.capitalize()}",
             total=len(self.dataset),
-            receipt=True,
-            receipt_text=True,
+            # Lower number of chars for progress bar.
+            length=20,
         ) as pbar:
             for self.batch in self.dataset:
                 self._run_event("on_batch_start")
                 self.run_batch()
                 self._run_event("on_batch_end")
                 # Show in progress bar
-                pbar.text(", ".join(f"{k}: {v:.4f}" for k, v in self.batch_metrics.items()))
+                pbar.text = (
+                    f"[ {', '.join(f'{k}: {v:.4f}' for k, v in self.batch_metrics.items())} ]"
+                )
                 pbar()
         self.dataset_metrics = {
             key: metric.get_metric(reset=True) for key, metric in self._metrics.items()
