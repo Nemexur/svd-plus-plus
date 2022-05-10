@@ -1,5 +1,5 @@
 from typing import Any, Optional, Set, Tuple, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 import json
 from pathlib import Path
@@ -17,8 +17,13 @@ def get_stats(path: Path) -> dict[str, Any]:
 
 @dataclass
 class Encoder:
-    item_to_idx: dict[str, int]
-    idx_to_item: dict[str, str]
+    item_to_idx: dict[str, int] = field(default_factory=dict)
+    idx_to_item: dict[str, str] = field(default_factory=dict)
+
+    def add(self, item: str) -> None:
+        idx = len(self.item_to_idx)
+        self.item_to_idx[str(item)] = idx
+        self.idx_to_item[str(idx)] = str(item)
 
     def encode(self, items: Union[str, list[str]]) -> Union[int, list[int]]:
         if isinstance(items, str):
@@ -40,9 +45,13 @@ class Encoder:
 
     @classmethod
     def from_values(cls: "Encoder", values: np.ndarray) -> "Encoder":
-        item_to_idx = {str(item): idx for idx, item in enumerate(values)}
-        idx_to_item = {str(idx): item for item, idx in item_to_idx.items()}
-        return cls(item_to_idx, idx_to_item)
+        _cls = cls()
+        # Add padding and oov element
+        _cls.add("@PADDING@")
+        _cls.add("@OOV@")
+        for value in values:
+            _cls.add(value)
+        return _cls
 
     @classmethod
     def load(cls: "Encoder", path: Path) -> "Encoder":
