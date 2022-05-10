@@ -1,9 +1,9 @@
+import distrax
 from einops import reduce
 import haiku as hk
 import jax
 import jax.numpy as jnp
 import optax
-import tensorflow_probability.substrates.jax.distributions as tfd
 
 
 @jax.jit
@@ -39,7 +39,9 @@ def warp_loss(
     L = jnp.zeros(num_items)
     # samples_scores ~ (max num trials)
     samples_scores = output[
-        tfd.Categorical(probs=weights).sample(max_num_trials, seed=state["rng_key"])
+        distrax.Categorical(probs=weights).sample(
+            seed=state["rng_key"], sample_shape=max_num_trials
+        )
     ]
     sample_score_margin = (
         (alpha + samples_scores - jnp.expand_dims(output[pos_items_idx], axis=-1)) > 0
